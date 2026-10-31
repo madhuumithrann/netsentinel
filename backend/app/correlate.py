@@ -420,4 +420,5 @@ def _overall(incidents: list[dict[str, Any]]) -> dict[str, Any]:
     if counts["benign"]:
         parts.append(f"{counts['benign']} {'is' if counts['benign'] == 1 else 'are'} expected behaviour")
     headline = (". ".join(p[0].upper() + p[1:] for p in parts) + ".") if parts else ""
-    return {"status": status, "label": label, "headline": headline, "counts": dict(counts)}
+    return {"status": status, "label": label, "headline": headline,
+            "counts": {k: v for k, v in counts.items() if v}}

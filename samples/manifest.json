@@ -1,0 +1,170 @@
+[
+  {
+    "id": "benign_office",
+    "file": "benign_office.pcap",
+    "title": "Healthy small-office network: DHCP, ARP, DNS, web browsing, file transfer",
+    "description": "Healthy small-office network: DHCP, ARP, DNS, web browsing, file transfer",
+    "kind": "benign",
+    "scenario": "benign_office",
+    "packets": 1839,
+    "expected_findings": []
+  },
+  {
+    "id": "attack_arp_spoofing_mitm",
+    "file": "attack_arp_spoofing_mitm.pcap",
+    "title": "Attacker poisons gateway and client every 2 s, then relays the client's traffic (MITM)",
+    "description": "Attacker poisons gateway and client every 2 s, then relays the client's traffic (MITM)",
+    "kind": "attack",
+    "scenario": "arp_spoofing_mitm",
+    "packets": 720,
+    "expected_findings": [
+      "ARP_SPOOFING"
+    ]
+  },
+  {
+    "id": "attack_dns_hijack",
+    "file": "attack_dns_hijack.pcap",
+    "title": "On-LAN injector races the gateway resolver for bank.example.com (TTL 128 vs 64); the victim rejects the real answer and connects to the forged address",
+    "description": "On-LAN injector races the gateway resolver for bank.example.com (TTL 128 vs 64); the victim rejects the real answer and connects to the forged address",
+    "kind": "attack",
+    "scenario": "dns_hijack_race",
+    "packets": 466,
+    "expected_findings": [
+      "DNS_HIJACK_SUSPECTED"
+    ]
+  },
+  {
+    "id": "attack_port_scan",
+    "file": "attack_port_scan.pcap",
+    "title": "SYN half-open scan of ports 1-100 on one server (22 and 80 open)",
+    "description": "SYN half-open scan of ports 1-100 on one server (22 and 80 open)",
+    "kind": "attack",
+    "scenario": "scan_vertical_syn",
+    "packets": 422,
+    "expected_findings": [
+      "PORT_SCAN"
+    ]
+  },
+  {
+    "id": "attack_rogue_dhcp",
+    "file": "attack_rogue_dhcp.pcap",
+    "title": "Attacker DHCP server offers itself as gateway and 6.6.6.6 as DNS; one client accepts and its traffic is redirected",
+    "description": "Attacker DHCP server offers itself as gateway and 6.6.6.6 as DNS; one client accepts and its traffic is redirected",
+    "kind": "attack",
+    "scenario": "dhcp_rogue_server",
+    "packets": 502,
+    "expected_findings": [
+      "ROGUE_DHCP_SERVER"
+    ]
+  },
+  {
+    "id": "incident_mitm_chain",
+    "file": "incident_mitm_chain.pcap",
+    "title": "Multi-stage attack: port scan, ARP poisoning man-in-the-middle, then forged DNS for a bank",
+    "description": "Multi-stage attack: port scan, ARP poisoning man-in-the-middle, then forged DNS for a bank",
+    "kind": "incident",
+    "scenario": "incident_mitm_chain",
+    "packets": 935,
+    "expected_findings": [
+      "ARP_SPOOFING",
+      "DNS_HIJACK_SUSPECTED",
+      "PORT_SCAN"
+    ]
+  },
+  {
+    "id": "incident_outage_vs_attack",
+    "file": "incident_outage_vs_attack.pcap",
+    "title": "Internet outage (DNS and connections failing) at the same time as an unrelated port scan",
+    "description": "Internet outage (DNS and connections failing) at the same time as an unrelated port scan",
+    "kind": "incident",
+    "scenario": "incident_outage_vs_attack",
+    "packets": 304,
+    "expected_findings": [
+      "DNS_SERVER_UNRESPONSIVE",
+      "PORT_SCAN",
+      "TCP_SYN_RETRIES"
+    ]
+  },
+  {
+    "id": "fault_dns_outage",
+    "file": "fault_dns_outage.pcap",
+    "title": "Internal DNS server answers 4 lookups, then all lookups time out with retries",
+    "description": "Internal DNS server answers 4 lookups, then all lookups time out with retries",
+    "kind": "fault",
+    "scenario": "dns_server_outage",
+    "packets": 482,
+    "expected_findings": [
+      "DNS_SERVER_UNRESPONSIVE"
+    ]
+  },
+  {
+    "id": "fault_duplicate_ip",
+    "file": "fault_duplicate_ip.pcap",
+    "title": "Two workstations configured with the same static IP answer ARP alternately",
+    "description": "Two workstations configured with the same static IP answer ARP alternately",
+    "kind": "fault",
+    "scenario": "arp_duplicate_ip",
+    "packets": 574,
+    "expected_findings": [
+      "DUPLICATE_IP"
+    ]
+  },
+  {
+    "id": "fault_mtu_blackhole",
+    "file": "fault_mtu_blackhole.pcap",
+    "title": "Large packets silently dropped (ICMP filtered): uploads stall",
+    "description": "Large packets silently dropped (ICMP filtered): uploads stall",
+    "kind": "fault",
+    "scenario": "mtu_blackhole",
+    "packets": 313,
+    "expected_findings": [
+      "MTU_BLACKHOLE_SUSPECTED"
+    ]
+  },
+  {
+    "id": "fault_packet_loss",
+    "file": "fault_packet_loss.pcap",
+    "title": "Downloads from one internet server lose about 5% of packets",
+    "description": "Downloads from one internet server lose about 5% of packets",
+    "kind": "fault",
+    "scenario": "retx_lossy_internet_path",
+    "packets": 849,
+    "expected_findings": [
+      "TCP_RETRANSMISSIONS"
+    ]
+  },
+  {
+    "id": "fault_service_refused",
+    "file": "fault_service_refused.pcap",
+    "title": "Clients repeatedly refused by a crashed service on port 8080",
+    "description": "Clients repeatedly refused by a crashed service on port 8080",
+    "kind": "fault",
+    "scenario": "rst_service_down",
+    "packets": 330,
+    "expected_findings": [
+      "TCP_CONNECTION_REFUSED"
+    ]
+  },
+  {
+    "id": "fault_slow_server",
+    "file": "fault_slow_server.pcap",
+    "title": "20 ms handshake but the application needs 4 s to answer",
+    "description": "20 ms handshake but the application needs 4 s to answer",
+    "kind": "fault",
+    "scenario": "delay_slow_application",
+    "packets": 446,
+    "expected_findings": [
+      "SLOW_SERVER_RESPONSE"
+    ]
+  },
+  {
+    "id": "malformed_huge_record",
+    "file": "malformed_huge_record.pcap",
+    "title": "Corrupt capture: a record claims 4 GB of data",
+    "description": "Tests safe input handling: the parser must stop cleanly and warn, not allocate 4 GB or crash.",
+    "kind": "malformed",
+    "scenario": null,
+    "packets": 1,
+    "expected_findings": []
+  }
+]

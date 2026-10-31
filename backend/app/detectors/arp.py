@@ -95,7 +95,7 @@ from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 from statistics import median, pstdev
 
-from ..context import AnalysisContext
+from ..context import AnalysisContext, is_private
 from ..model import ATTACK, BENIGN, FAULT, INCONCLUSIVE, Evidence, Finding, Indicator, PacketRecord, assess
 
 NAME = "arp"
@@ -647,7 +647,10 @@ def _analyse_pair(ctx: AnalysisContext, key: tuple, owner: str, chal: str, timel
            "owner_ip_frames": o_ip[0] if o_ip else 0, "challenger_ip_frames": c_ip[0] if c_ip else 0,
            "overlap": overlap, "probe_conflicts": len(pair_conf), "interval": interval, "periodic": periodic,
            "challenger_other_ips": c_other, "owner_other_ips": o_other, "sender_ips": sender_ips,
-           "victims": sorted({c.rec.arp_pdst for c in c_unsol if c.rec.arp_pdst} | set(red.sources)),
+           # Victims: hosts sent false mappings, plus local hosts whose traffic was diverted
+           # (redirected packets from internet servers have public sources and are excluded).
+           "victims": sorted(({c.rec.arp_pdst for c in c_unsol if c.rec.arp_pdst}
+                              | {s for s in red.sources if is_private(s)}) - {ip}),
            "first_owner": oc[0].ts if oc else None, "first_chal": c_first, "old_silent": old_silent,
            "times": [c.ts for c in (oc[:1] + oc[-1:] + cc[:1] + cc[-1:])]
            + [x.ts for x in red.samples[:1]] + [c.probe.ts for c in pair_conf[:1]]}
@@ -765,7 +768,9 @@ def _spoofing_finding(ctx: AnalysisContext, vlan, device: str, pairs: list[_Pair
     unsol = sum(p.m["unsolicited"] for p in pairs)
     mism = sum(p.m["mismatch"] for p in pairs)
     flips = sum(1 for p in pairs if p.m["transitions"] >= th.arp_flip_min_transitions)
-    victims = sorted({v for p in pairs for v in p.m["victims"]} - set(impersonated) - set(own_ips))
+    # In two-way poisoning the client and gateway are each impersonated to the other, so a host
+    # can be both impersonated and a victim; only the attacker's own addresses are excluded.
+    victims = sorted({v for p in pairs for v in p.m["victims"]} - set(own_ips))
     spoofed_macs = sorted({p.chal for p in pairs if p.chal != device})
     all_claimed = sorted(set(mac_ips.get((vlan, device), {}))
                          | {ip for p in pairs for ip in mac_ips.get((vlan, p.chal), {})})
