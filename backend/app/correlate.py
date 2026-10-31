@@ -410,7 +410,8 @@ def _overall(incidents: list[dict[str, Any]]) -> dict[str, Any]:
     parts = []
     if attacks:
         names = [i["title"] for i in incidents if i["verdict"] in ("attack", "mixed")][:3]
-        parts.append(f"{attacks} incident{'s' if attacks > 1 else ''} match attack indicators ({'; '.join(names)})")
+        parts.append(f"{attacks} incident{'s match' if attacks > 1 else ' matches'} attack indicators "
+                     f"({'; '.join(names)})")
     if faults:
         names = [i["title"] for i in incidents if i["verdict"] == "fault"][:3]
         parts.append(f"{faults} look{'s' if faults == 1 else ''} like ordinary network fault{'s' if faults > 1 else ''} "
