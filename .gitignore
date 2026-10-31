@@ -29,3 +29,10 @@ CLAUDE.md
 # Private packet captures
 *.pcap
 *.pcapng
+*.cap
+# ...except the synthetic, generated sample captures shipped for judges
+!samples/*.pcap
+!samples/*.pcapng
+
+# Test / tooling caches
+.pytest_cache/
