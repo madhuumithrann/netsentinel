@@ -5,22 +5,22 @@ __pycache__/
 .venv/
 venv/
 
-# Environment variables
-.env
-.env.*
-!.env.example
-
 # Node
 node_modules/
 dist/
 build/
 
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Claude instructions
+CLAUDE.md
+
 # IDE
 .vscode/
 .idea/
-
-# Claude instructions (local only)
-CLAUDE.md
 
 # Temporary files
 *.tmp
