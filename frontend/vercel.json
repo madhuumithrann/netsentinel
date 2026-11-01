@@ -1,0 +1,9 @@
+
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://netsentinel-api-x7r3.onrender.com/api/:path*"
+    }
+  ]
+}
