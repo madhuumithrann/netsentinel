@@ -1,5 +1,61 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getHealth } from './api.js';
+
+export const VIEW_IDS = ['overview', 'incidents', 'findings', 'traffic', 'evidence', 'report'];
+const ROUTE_KEYS = ['incident', 'finding', 'packet', 'tab', 'protocol', 'q'];
+
+/**
+ * Route <-> URL hash, e.g. "#/evidence?finding=F-002&packet=246". Only view names and
+ * ids go into the URL (never capture data), so Back/Forward work and nothing sensitive
+ * is persisted. Unknown views fall back to the overview.
+ */
+export function parseHash(hash) {
+  const [path = '', qs = ''] = String(hash || '').replace(/^#\/?/, '').split('?');
+  const p = new URLSearchParams(qs);
+  const packet = Number(p.get('packet'));
+  return {
+    view: VIEW_IDS.includes(path) ? path : 'overview',
+    incident: p.get('incident') || '',
+    finding: p.get('finding') || '',
+    packet: p.get('packet') && Number.isInteger(packet) && packet > 0 ? packet : null,
+    tab: p.get('tab') || '',
+    protocol: p.get('protocol') || '',
+    q: p.get('q') || '',
+  };
+}
+
+export function routeToHash(route) {
+  const p = new URLSearchParams();
+  for (const key of ROUTE_KEYS) {
+    const v = route[key];
+    if (v != null && v !== '') p.set(key, String(v));
+  }
+  const qs = p.toString();
+  return `#/${route.view || 'overview'}${qs ? `?${qs}` : ''}`;
+}
+
+/** [route, navigate(route, {replace})]: pushes a history entry unless replace is set. */
+export function useHashRoute() {
+  const [route, setRoute] = useState(() => parseHash(window.location.hash));
+  useEffect(() => {
+    const sync = () => setRoute(parseHash(window.location.hash));
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
+  }, []);
+  const navigate = useCallback((next, { replace = false } = {}) => {
+    const hash = routeToHash(next);
+    if (hash !== window.location.hash) {
+      if (replace) window.history.replaceState(null, '', hash);
+      else window.history.pushState(null, '', hash);
+    }
+    setRoute(parseHash(hash));
+  }, []);
+  return [route, navigate];
+}
 
 const HEALTH_INTERVAL_MS = 10_000;
 const HEALTH_TIMEOUT_MS = 5_000;

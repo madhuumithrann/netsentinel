@@ -1,0 +1,97 @@
+/* Traffic view (.tr-) and the traffic chart, which the Overview also uses. */
+
+/* ---------- stats + layout ---------- */
+.tr-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-3); }
+.tr-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--sp-4); align-items: start; }
+.tr-panel-note { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--muted); }
+.tr-empty { padding: var(--sp-3) var(--sp-5) var(--sp-4); }
+
+/* ---------- activity chart ---------- */
+.tr-chart { display: flex; flex-direction: column; min-width: 0; }
+.tr-chart-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-2); }
+.tr-legend { display: flex; flex-wrap: wrap; gap: var(--sp-5); font-size: var(--fs-sm); color: var(--text-2); }
+.tr-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.tr-legend li + li { margin-top: 0; }
+.tr-legend strong { color: var(--text); font-weight: 600; }
+.tr-axis-unit { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.tr-axis-title { font-size: var(--fs-xs); color: var(--muted); text-align: center; margin-top: 2px; }
+.tr-plot { width: 100%; min-width: 0; }
+
+/* incident strip: one lane per set of non-overlapping ranges, aligned with the plot area */
+.tr-strip { margin-bottom: 4px; }
+.tr-strip-track { position: relative; border-bottom: 1px solid var(--border); }
+.tr-band {
+  position: absolute; height: 17px; min-width: 6px; padding: 0; border: 0; border-radius: 3px;
+  box-shadow: none; cursor: pointer; overflow: visible;
+}
+.tr-band.tone-attack { border-left: 2px solid var(--attack); }
+.tr-band.tone-fault { border-left: 2px solid var(--fault); }
+.tr-band.tone-inconclusive { border-left: 2px solid var(--info); }
+.tr-band.tone-clean { border-left: 2px solid var(--clean); }
+.tr-band.tone-neutral { border-left: 2px solid var(--neutral); }
+.tr-band.is-hot { box-shadow: inset 0 0 0 1px currentColor; }
+.tr-band-label {
+  position: absolute; left: 5px; top: 0; line-height: 17px; font-family: var(--mono); font-size: var(--fs-xs);
+  font-weight: 600; white-space: nowrap; pointer-events: none;
+}
+.tr-band.is-end .tr-band-label { left: auto; right: 5px; }
+
+/* incident buttons under the chart (the keyboard path to the bands) */
+.tr-incidents { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.tr-incidents li + li { margin-top: 0; }
+.tr-inc {
+  display: inline-flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 10px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2);
+  font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap;
+}
+button.tr-inc:hover, .tr-inc.is-hot { border-color: var(--border-input); background: var(--surface-3); color: var(--text); }
+.tr-inc-id { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 600; color: var(--text); }
+.tr-inc-range { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
+
+.tr-tooltip { min-width: 170px; }
+.tr-key { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
+.tr-zero { opacity: 0.5; }
+.tr-tooltip-total { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
+
+/* ---------- protocol bars (shared class names from base.css) ---------- */
+/* Neutral fill: blue is the TCP series colour in the activity chart, and these rows are not all TCP. */
+.tr-proto .proto-fill { background: var(--neutral); opacity: 0.75; }
+.tr-proto .proto-fill.tr-fill-folded { opacity: 0.4; }
+
+/* ---------- tables ---------- */
+.tr-addr { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.tr-scope {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r-sm);
+  font-size: var(--fs-xs); color: var(--muted); box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.tr-scope.is-public { color: var(--text-2); background: var(--surface-3); box-shadow: none; }
+.tr-bar-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); width: 100%; }
+.tr-bar { flex: 1; max-width: 140px; min-width: 48px; height: 6px; border-radius: 2px; background: var(--surface-3); overflow: hidden; display: flex; }
+.tr-bar > span { display: block; height: 100%; border-radius: 2px; background: var(--neutral); opacity: 0.75; }
+
+.tr-macs { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px var(--sp-3); font-size: var(--fs-sm); }
+.tr-macs .badge { height: 20px; }
+
+.tr-toolbar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding: 0 var(--sp-5) var(--sp-3); }
+.tr-search { position: relative; display: inline-flex; align-items: center; flex: 0 1 340px; min-width: 200px; }
+.tr-search svg { position: absolute; left: 10px; color: var(--muted); pointer-events: none; }
+.tr-search .input { width: 100%; height: 30px; padding-left: 30px; }
+.tr-evidence { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.tr-conv-table td .chip { height: 20px; }
+.panel-flush > .table-note, .panel-flush .table-note { border-top: 1px solid var(--border); }
+
+/* ---------- smaller screens ---------- */
+@media (max-width: 1280px) {
+  .tr-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1080px) {
+  .tr-pair { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .tr-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media print {
+  .tr-strip, .tr-band { print-color-adjust: exact; }
+  .tr-toolbar { display: none; }
+}

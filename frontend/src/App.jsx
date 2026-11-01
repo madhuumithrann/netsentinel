@@ -1,106 +1,143 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Printer } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { analyzeCapture, analyzeSample, getSamples } from './api.js';
-import { buildIndex, normalizeResult } from './derive.js';
-import { formatInt, safeFileStem } from './format.js';
-import { useHealth } from './hooks.js';
-import AnalyzePanel from './components/AnalyzePanel.jsx';
+import { assessmentGroup, buildIndex, normalizeResult, overallAssessment } from './derive.js';
+import { plural, safeFileStem } from './format.js';
+import { useHashRoute, useHealth } from './hooks.js';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import EvidenceView from './components/EvidenceView.jsx';
 import FindingsView from './components/FindingsView.jsx';
 import IncidentsView from './components/IncidentsView.jsx';
+import JobStrip from './components/JobStrip.jsx';
+import Landing from './components/Landing.jsx';
+import NewAnalysisDialog from './components/NewAnalysisDialog.jsx';
 import Overview from './components/Overview.jsx';
+import ReportBar from './components/ReportBar.jsx';
+import ReportView from './components/ReportView.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import TrafficView from './components/TrafficView.jsx';
 
 const IDLE = { status: 'idle', label: '', startedAt: null, error: '', notice: '' };
-const NO_FILTER = { incidentId: '', findingId: '', packet: null, query: '' };
+const NOTICE_MS = 12_000;
 
 export default function App() {
   const health = useHealth();
-  const [view, setView] = useState('overview');
-  const [raw, setRaw] = useState(null);          // backend response, kept for the JSON export
+  const [route, navigate] = useHashRoute();
+  const [raw, setRaw] = useState(null); // untouched backend response, kept for the JSON export
   const [job, setJob] = useState(IDLE);
-  const [samples, setSamples] = useState({ items: [], error: '' });
-  const [selectedIncident, setSelectedIncident] = useState(null);
-  const [findingsTab, setFindingsTab] = useState('attack');
-  const [evidenceFilter, setEvidenceFilter] = useState(NO_FILTER);
+  const [samples, setSamples] = useState({ state: 'idle', items: [], error: '' });
+  const [samplesTry, setSamplesTry] = useState(0);
   const [checks, setChecks] = useState({});
+  const [dialogOpen, setDialogOpen] = useState(false);
   const controller = useRef(null);
+  const routeRef = useRef(route);
+  routeRef.current = route;
 
   const result = useMemo(() => (raw ? normalizeResult(raw) : null), [raw]);
   const index = useMemo(() => (result ? buildIndex(result) : null), [result]);
+  const assessment = useMemo(() => (result ? overallAssessment(result, index) : null), [result, index]);
 
-  // Load the bundled samples once the backend is reachable.
+  // Bundled samples: load once the backend is reachable (and retry after an outage).
   const online = health.state === 'online';
   useEffect(() => {
-    if (!online || samples.items.length) return undefined;
+    if (!online || samples.state === 'ready' || samples.state === 'loading') return undefined;
     const ctl = new AbortController();
+    setSamples((s) => ({ ...s, state: 'loading', error: '' }));
     getSamples(ctl.signal)
-      .then((items) => setSamples({ items, error: '' }))
+      .then((items) => setSamples({ state: 'ready', items, error: '' }))
       .catch((err) => {
-        if (err.kind !== 'abort') setSamples({ items: [], error: err.message });
+        if (err.kind !== 'abort') setSamples({ state: 'error', items: [], error: err.message });
       });
     return () => ctl.abort();
-  }, [online, samples.items.length]);
+  }, [online, samplesTry]); // samples.state is read, not tracked: re-running on it would abort the request it starts
+  const samplesView = useMemo(() => ({ ...samples, retry: () => setSamplesTry((n) => n + 1) }), [samples]);
 
-  // Move keyboard focus to the new view's heading so screen-reader users hear the change.
+
+  // A file dropped outside the upload area must not make the browser open it (and lose the report).
   useEffect(() => {
-    document.getElementById('view-title')?.focus({ preventScroll: true });
-    window.scrollTo({ top: 0 });
-  }, [view]);
-
-  const run = useCallback(async (label, call) => {
-    controller.current?.abort();
-    const ctl = new AbortController();
-    controller.current = ctl;
-    const startedAt = Date.now();
-    setJob({ ...IDLE, status: 'running', label, startedAt });
-    try {
-      const data = await call(ctl.signal);
-      if (controller.current !== ctl) return;
-      setRaw(data);
-      setSelectedIncident(null);
-      setEvidenceFilter(NO_FILTER);
-      setChecks({});
-      const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
-      setJob({ ...IDLE, notice: `Analysed ${label}: ${formatInt(data?.packets_analyzed ?? 0)} packets in ${seconds} s.` });
-      const attackOrFault = Array.isArray(data?.incidents) && data.incidents.length;
-      setFindingsTab(data?.summary?.attacks ? 'attack' : 'fault');
-      setView(attackOrFault ? 'incidents' : 'overview');
-    } catch (err) {
-      if (controller.current !== ctl) return;
-      if (err.kind === 'abort') {
-        setJob({ ...IDLE, notice: 'Analysis cancelled. The server may still finish it in the background; the result is discarded.' });
-      } else {
-        setJob({ ...IDLE, status: 'error', label, error: err.message });
-      }
-    }
+    const guard = (e) => {
+      if (!e.target?.closest?.('.dropzone')) e.preventDefault();
+    };
+    window.addEventListener('dragover', guard);
+    window.addEventListener('drop', guard);
+    return () => {
+      window.removeEventListener('dragover', guard);
+      window.removeEventListener('drop', guard);
+    };
   }, []);
 
-  const onAnalyzeFile = (file) => run(file.name, (signal) => analyzeCapture(file, signal));
-  const onAnalyzeSample = (sample) => {
-    const id = typeof sample === 'string' ? sample : sample.id;
-    const label = typeof sample === 'string' ? sample : sample.file || sample.id;
-    return run(label, (signal) => analyzeSample(id, signal));
-  };
-  const onCancel = () => controller.current?.abort();
+  // Success notices fade after a while; errors stay until the next action.
+  useEffect(() => {
+    if (job.status !== 'idle' || !job.notice) return undefined;
+    const t = setTimeout(() => setJob((j) => (j.status === 'idle' ? { ...j, notice: '' } : j)), NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [job]);
 
-  const openIncident = (id) => {
-    setSelectedIncident(id);
-    setView('incidents');
-  };
-  // Finding cards pass a finding id; incident views pass {incidentId, findingId}.
-  const viewEvidence = (target) => {
-    const t = typeof target === 'string' ? { findingId: target } : target || {};
-    setEvidenceFilter({ ...NO_FILTER, incidentId: t.incidentId || '', findingId: t.findingId || '' });
-    setView('evidence');
-  };
-  const openPacket = (event, incidentId) => {
-    setEvidenceFilter({ ...NO_FILTER, incidentId: incidentId || '', findingId: event?.finding || '',
-                        packet: Number.isFinite(event?.packet) ? event.packet : null });
-    setView('evidence');
-  };
+  // New view: start at the top and move focus to its heading (screen readers hear the change).
+  // A layout effect, so it runs before child effects that scroll to a selected packet or finding.
+  // Not on the first page load: there the document start (skip link, navigation) keeps the focus.
+  const activeView = result ? route.view : 'overview';
+  const shownView = useRef(activeView); // compared, not counted: StrictMode runs effects twice
+  useLayoutEffect(() => {
+    if (shownView.current === activeView) return;
+    shownView.current = activeView;
+    window.scrollTo({ top: 0 });
+    document.getElementById('view-title')?.focus({ preventScroll: true });
+  }, [activeView]);
+
+  const run = useCallback(
+    async (label, call) => {
+      controller.current?.abort();
+      const ctl = new AbortController();
+      controller.current = ctl;
+      const startedAt = Date.now();
+      setDialogOpen(false);
+      setJob({ ...IDLE, status: 'running', label, startedAt });
+      try {
+        const data = await call(ctl.signal);
+        if (controller.current !== ctl) return;
+        setRaw(data);
+        setChecks({});
+        const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+        const packets = Number.isFinite(data?.packets_analyzed) ? data.packets_analyzed : 0;
+        setJob({ ...IDLE, notice: `Analysed ${label}: ${plural(packets, 'packet')} in ${seconds} s.` });
+        navigate({ view: 'overview' });
+      } catch (err) {
+        if (controller.current !== ctl) return;
+        if (err.kind === 'abort') {
+          setJob({ ...IDLE, notice: 'Analysis cancelled. The server may still finish it in the background; that result is discarded.' });
+        } else {
+          setJob({ ...IDLE, status: 'error', label, error: err.message });
+        }
+      }
+    },
+    [navigate],
+  );
+
+  const onAnalyzeFile = (file) => run(file.name, (signal) => analyzeCapture(file, signal));
+  const onAnalyzeSample = (sample) => run(sample.file || sample.id, (signal) => analyzeSample(sample.id, signal));
+  const onCancel = () => controller.current?.abort();
   const toggleCheck = (key) => setChecks((c) => ({ ...c, [key]: !c[key] }));
+
+  // Navigation actions shared by every view. Only ids travel through the URL.
+  const nav = useMemo(
+    () => ({
+      go: (view) => navigate({ view }),
+      /** Update parameters of the current view; replace=true for typing / filtering. */
+      set: (patch, opts) => navigate({ ...routeRef.current, ...patch }, opts),
+      openIncident: (id) => navigate({ view: 'incidents', incident: id || '' }),
+      openFinding: (id) => {
+        const f = index?.findingsById.get(id);
+        navigate({ view: 'findings', tab: f ? assessmentGroup(f) : '', finding: id || '' });
+      },
+      /** Inspect one frame. finding/incident (optional) pre-filter the explorer around it. */
+      openPacket: (packet, { finding = '', incident = '' } = {}) =>
+        navigate({ view: 'evidence', packet: Number.isFinite(packet) ? packet : null, finding, incident }),
+      viewEvidence: ({ incident = '', finding = '', q = '' } = {}) => navigate({ view: 'evidence', incident, finding, q }),
+      openReport: () => navigate({ view: 'report' }),
+      newAnalysis: () => setDialogOpen(true),
+    }),
+    [navigate, index],
+  );
 
   function exportJson() {
     const blob = new Blob([JSON.stringify(raw, null, 2)], { type: 'application/json' });
@@ -115,70 +152,49 @@ export default function App() {
   }
 
   const counts = result
-    ? { incidents: result.incidents.length, findings: result.findings.length, evidence: index.evidenceRows.length }
+    ? { incidents: result.incidents.length, findings: result.findings.length, evidence: index.evidencePackets.length,
+        attacks: assessment.counts.attack }
     : null;
-  const activeView = result ? view : 'overview';
+  const stale = Boolean(result) && job.status === 'error';
+  const views = { result, index, route, nav };
 
   return (
     <div className="app">
       <a className="skip-link" href="#main">Skip to content</a>
-      <Sidebar view={activeView} onNavigate={setView} hasResult={Boolean(result)} counts={counts} health={health} />
+      <Sidebar view={activeView} onNavigate={nav.go} hasResult={Boolean(result)} counts={counts} health={health} />
       <main id="main" className="main">
         {result && (
-          <header className="report-bar">
-            <div>
-              <div className="eyebrow">Analysis report</div>
-              <div className="report-file mono" title={result.file}>{result.file}</div>
-            </div>
-            <div className="report-actions">
-              <button type="button" className="button button-secondary" onClick={exportJson}>
-                <Download size={15} aria-hidden="true" /> Download JSON
-              </button>
-              <button type="button" className="button button-secondary" onClick={() => window.print()}>
-                <Printer size={15} aria-hidden="true" /> Print
-              </button>
-            </div>
-          </header>
+          <ReportBar result={result} assessment={assessment} view={activeView} stale={stale}
+                     onNewAnalysis={nav.newAnalysis} onExport={exportJson} onPrint={() => window.print()} />
         )}
+        <div className="main-inner">
+          <JobStrip job={job} limits={health.data?.limits} staleFile={stale ? result.file : ''}
+                    onCancel={onCancel} onDismiss={() => setJob(IDLE)} />
 
-        {activeView === 'overview' && (
-          <>
-            {!result && (
-              <div className="view-head intro">
-                <h1 id="view-title" tabIndex={-1}>Diagnose a network from a packet capture</h1>
-                <p className="lead">
-                  NetSentinel finds faults and attacks in pcap / pcapng files, groups related findings into incidents,
-                  says whether each looks like an ordinary fault or an attack, and shows the exact packets behind every
-                  conclusion.
-                </p>
-              </div>
-            )}
-            <AnalyzePanel limits={health.data?.limits} job={job} onAnalyzeFile={onAnalyzeFile}
-                          onAnalyzeSample={onAnalyzeSample} onCancel={onCancel}
-                          samples={samples.items} compact={Boolean(result)} />
-            {samples.error && <p className="inline-error">Could not load sample captures: {samples.error}</p>}
-            {result && <Overview result={result} index={index} onOpenIncident={openIncident} onNavigate={setView} />}
-          </>
-        )}
-        {activeView === 'incidents' && (
-          <IncidentsView result={result} index={index} selectedId={selectedIncident} onSelect={setSelectedIncident}
-                         onOpenPacket={openPacket} onViewEvidence={viewEvidence} checks={checks}
-                         onToggleCheck={toggleCheck} />
-        )}
-        {activeView === 'findings' && (
-          <FindingsView result={result} index={index} tab={findingsTab} onTabChange={setFindingsTab}
-                        onViewEvidence={viewEvidence} onOpenIncident={openIncident} />
-        )}
-        {activeView === 'traffic' && <TrafficView result={result} onOpenIncident={openIncident} />}
-        {activeView === 'evidence' && (
-          <EvidenceView result={result} index={index} filter={evidenceFilter} onFilterChange={setEvidenceFilter}
-                        onOpenIncident={openIncident} />
-        )}
+          {!result && (
+            <Landing health={health} samples={samplesView} busy={job.status === 'running'}
+                     onAnalyzeFile={onAnalyzeFile} onAnalyzeSample={onAnalyzeSample} />
+          )}
+          {result && (
+            <ErrorBoundary resetKey={`${activeView}|${result.file}|${result.packets_analyzed}`}>
+              {activeView === 'overview' && <Overview {...views} assessment={assessment} />}
+              {activeView === 'incidents' && <IncidentsView {...views} checks={checks} onToggleCheck={toggleCheck} />}
+              {activeView === 'findings' && <FindingsView {...views} />}
+              {activeView === 'traffic' && <TrafficView {...views} />}
+              {activeView === 'evidence' && <EvidenceView {...views} />}
+              {activeView === 'report' && <ReportView {...views} assessment={assessment} checks={checks} />}
+            </ErrorBoundary>
+          )}
 
-        <footer className="footer muted">
-          {result?.notice || 'Findings are evidence-based indicators, not proof. Analysis runs offline on your machine.'}
-        </footer>
+          <footer className="footer">
+            {result?.notice ||
+              'Findings are evidence-based indicators, not proof. Analysis runs on your own NetSentinel backend; captures are not stored.'}
+          </footer>
+        </div>
       </main>
+
+      <NewAnalysisDialog open={dialogOpen} onClose={() => setDialogOpen(false)} health={health} samples={samplesView}
+                         busy={job.status === 'running'} onAnalyzeFile={onAnalyzeFile} onAnalyzeSample={onAnalyzeSample} />
     </div>
   );
 }

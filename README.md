@@ -130,6 +130,24 @@ the upload area. Good starting points:
 All samples are **synthetic**, generated offline from labelled scenarios
 (`python -m lab.generate_samples`). They contain no real traffic.
 
+### The investigation dashboard
+
+Designed for a laptop screen (1366×768 and up). Every view reads only what the backend
+returned; nothing is simulated.
+
+| View | What it answers |
+|---|---|
+| **Overview** | The capture verdict first: attack, fault, *mixed* (attack and fault incidents in one capture), needs investigation, or clean. Incomplete or truncated captures are never shown as a green "clean". Below it: key numbers, the incidents in order of importance with an **Investigate** button, what each detector concluded, and a traffic summary. |
+| **Incidents** | The reconstructed incident: verdict and confidence, what happened, *why* (indicators grouped by fault / attack / expected, with strengths), how the findings were linked (and that correlation is not causation), supporting findings, a timeline of the actual packets, affected hosts, observed facts, alternative explanations and a recommended-response checklist. |
+| **Faults & Threats** | Every detector finding, grouped by what the evidence indicates. Each card separates **observed** facts and key measurements from **inferred** cause, impact and alternatives. |
+| **Traffic** | Activity over time (incident ranges marked above the plot), protocol mix, top talkers, local hosts with inferred roles (an IP with several MACs is flagged), and conversations with their evidence packets. |
+| **Evidence** | Every cited packet, filterable by incident, finding, protocol and text, plus "go to packet #". Selecting a packet opens an inspector: header fields, why each finding cited it (and which rule), its conversation and the other evidence in it, and what is known about both hosts. Frame numbers match Wireshark's *Go to packet*. |
+| **Report** | A printable investigation report built from fixed templates: executive summary, assessment method, incident-by-incident analysis with observed / correlated / inferred sections, timelines, packet evidence, remediation and limitations. **Print report** produces a clean paper or PDF version; **Print view** prints whichever view is open. |
+
+Navigation lives in the URL, so the browser's Back and Forward buttons work and a view can be
+reopened by its address (only view names and ids are stored there, never capture data).
+**JSON** downloads the raw backend response.
+
 ### Command line (no browser needed)
 
 ```powershell
@@ -175,7 +193,7 @@ flowchart LR
 | `backend/app/evidence.py` | Readable one-line packet summaries (header metadata only) |
 | `backend/app/cli.py` | Terminal report |
 | `backend/lab/` | Synthetic traffic builders, 102 labelled scenarios, sample generator, evaluation |
-| `frontend/src/` | React dashboard: overview, incidents, faults and threats, traffic, evidence explorer |
+| `frontend/src/` | React dashboard: verdict-first overview, incident investigation, faults and threats, traffic, evidence explorer with packet inspector, printable report. Design tokens in `styles/base.css`, one stylesheet per view |
 
 ## Testing and evaluation
 

@@ -200,9 +200,13 @@ export function normalizeResult(raw) {
     findings,
     incidents,
     verdict: {
-      status: str(verdict.status) || (incidents.length ? 'inconclusive' : 'clean'),
+      // Without a verdict block, findings alone must never read as "clean".
+      status: str(verdict.status) || (incidents.length || findings.length ? 'inconclusive' : 'clean'),
       label: str(verdict.label),
       headline: str(verdict.headline),
+      counts: Object.fromEntries(
+        Object.entries(obj(verdict.counts)).filter(([, v]) => Number.isFinite(v) && v > 0),
+      ),
     },
     summary: {
       findings: num(summary.findings) ?? findings.length,
@@ -273,7 +277,144 @@ export function buildIndex(result) {
     else if (inc.verdict in incidentCounts) incidentCounts[inc.verdict] += 1;
   }
 
-  return { findingsById, incidentsById, incidentOfFinding, evidenceRows, incidentCounts };
+  // Packet number -> every evidence row citing it (one frame can support several findings).
+  const evidenceByPacket = new Map();
+  for (const row of evidenceRows) {
+    if (!evidenceByPacket.has(row.packet)) evidenceByPacket.set(row.packet, []);
+    evidenceByPacket.get(row.packet).push(row);
+  }
+  const evidencePackets = [...evidenceByPacket.keys()].sort((a, b) => a - b);
+  // Finding id -> its evidence packet numbers in capture order (for previous / next).
+  const packetsByFinding = new Map(
+    result.findings.map((f) => [f.id, [...new Set(f.evidence.map((e) => e.packet))].sort((a, b) => a - b)]),
+  );
+
+  return {
+    findingsById,
+    incidentsById,
+    incidentOfFinding,
+    evidenceRows,
+    incidentCounts,
+    evidenceByPacket,
+    evidencePackets,
+    packetsByFinding,
+  };
+}
+
+/**
+ * Is the capture complete enough for a "clean" result to mean anything? Built only from
+ * the backend's parse report; never guessed.
+ */
+export function captureQuality(result) {
+  const reasons = [];
+  if (result.parse.truncated_file) {
+    reasons.push('the file is truncated or corrupt; only the complete packets before that point were analysed');
+  }
+  if (result.parse.stopped_early) reasons.push(`analysis stopped early (${result.parse.stopped_early})`);
+  if (result.parse.malformed_packets > 0) {
+    reasons.push(`${result.parse.malformed_packets} packet${result.parse.malformed_packets === 1 ? ' was' : 's were'} malformed`);
+  }
+  if (result.packets_analyzed === 0) reasons.push('the capture contains no packets');
+  return { incomplete: reasons.length > 0, empty: result.packets_analyzed === 0, reasons };
+}
+
+/**
+ * How the capture-level verdict is presented. The backend's overall status folds any
+ * attack into "attack"; verdict.counts keeps the split, so a capture with both attack
+ * and fault incidents is shown as "mixed" here without changing the backend contract.
+ */
+export function overallAssessment(result, index) {
+  const c = result.verdict.counts;
+  const counts = {
+    attack: (c.attack || 0) + (c.mixed || 0),
+    fault: c.fault || 0,
+    inconclusive: c.inconclusive || 0,
+    benign: c.benign || 0,
+  };
+  // Older responses without counts: fall back to the incidents themselves.
+  if (!Object.keys(c).length && index) Object.assign(counts, index.incidentCounts);
+  const quality = captureQuality(result);
+  const status = result.verdict.status;
+  let kind = status;
+  let label = result.verdict.label;
+  if (status === 'attack' && counts.fault > 0) {
+    kind = 'mixed';
+    label = 'Attack indicators and network faults';
+  } else if (status === 'clean' && quality.incomplete) {
+    kind = 'incomplete';
+    label = quality.empty ? 'Nothing to analyse' : 'No issues found in the readable part';
+  }
+  const fallback = { attack: 'Possible attack detected', fault: 'Network faults detected', inconclusive: 'Needs investigation', clean: 'No problems detected' };
+  return {
+    kind, // attack | mixed | fault | inconclusive | clean | incomplete
+    tone: { attack: 'attack', mixed: 'attack', fault: 'fault', inconclusive: 'inconclusive', clean: 'clean' }[kind] || 'neutral',
+    label: label || fallback[status] || 'Analysis complete',
+    headline: result.verdict.headline,
+    counts,
+    quality,
+  };
+}
+
+// Conversations are keyed by transport protocol; packet summaries name the application.
+const TRANSPORT_OF = { DNS: ['UDP', 'TCP'], DHCP: ['UDP'] };
+
+/**
+ * The conversation (from traffic.conversations) a packet belongs to, matched exactly the
+ * way the backend builds them: sorted address pair + transport protocol. Returns
+ * { conversation, capped } where capped means the list was cut to the busiest N, so a
+ * missing match is "not in the list", not "does not exist".
+ */
+export function findConversation(result, pkt) {
+  const capped = result.traffic.conversation_total > result.traffic.conversations.length;
+  if (!pkt || !pkt.src || !pkt.dst) return { conversation: null, capped };
+  const [a, b] = [pkt.src, pkt.dst].sort();
+  const candidates = [pkt.protocol, ...(TRANSPORT_OF[pkt.protocol] || [])];
+  for (const proto of candidates) {
+    const conversation = result.traffic.conversations.find((c) => c.a === a && c.b === b && c.protocol === proto);
+    if (conversation) return { conversation, capped };
+  }
+  return { conversation: null, capped };
+}
+
+/** Evidence packets (unique, capture order) that fall inside a conversation. */
+export function conversationPackets(result, index, conversation) {
+  if (!conversation) return [];
+  return index.evidencePackets.filter((n) => {
+    const p = result.packets[String(n)];
+    if (!p || !p.src || !p.dst) return false;
+    const [a, b] = [p.src, p.dst].sort();
+    if (a !== conversation.a || b !== conversation.b) return false;
+    return p.protocol === conversation.protocol || (TRANSPORT_OF[p.protocol] || []).includes(conversation.protocol);
+  });
+}
+
+/**
+ * Split text such as "answering request #246" into text and packet-reference segments.
+ * Only frame citations ("request #N", "packet #N", "frame #N") are references: the backend
+ * also writes counters with "#" ("duplicate ACK #2", "SYN retransmission #1"), and those
+ * must stay plain text rather than link to an unrelated packet.
+ */
+export function splitPacketRefs(text) {
+  const out = [];
+  const re = /\b(request|packet|frame)\s+#(\d{1,9})\b/gi;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const refStart = m.index + m[0].indexOf('#');
+    if (refStart > last) out.push({ text: text.slice(last, refStart) });
+    out.push({ packet: Number(m[2]) });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+/** The finding-assessment groups used by the Faults & Threats view, in display order. */
+export const ASSESSMENT_GROUPS = ['attack', 'fault', 'inconclusive', 'benign'];
+
+/** Group for a finding (unknown assessments are treated as needing investigation). */
+export function assessmentGroup(finding) {
+  return ASSESSMENT_GROUPS.includes(finding.assessment) ? finding.assessment : 'inconclusive';
 }
 
 /** Findings sorted for display: most severe first, then earliest. */

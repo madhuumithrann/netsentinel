@@ -1,0 +1,38 @@
+/* Printing: a light, ink-friendly version of whatever is on screen.
+   "Print view" prints the current view; the Report view is designed to be printed whole.
+   Views can opt elements out with .no-print and in with .print-only. */
+@media print {
+  @page { margin: 14mm 12mm; }
+  :root {
+    color-scheme: light;
+    --bg: #fff; --bg-side: #fff; --surface: #fff; --surface-2: #f4f6f9; --surface-3: #eceff4; --hover: #fff; --selected: #eef7f3;
+    --border: #d5dbe3; --border-strong: #b8c2ce; --border-input: #b8c2ce;
+    --text: #10151c; --text-2: #2b3440; --muted: #56616e; --faint: #7a8592;
+    --accent: #137a5e; --accent-strong: #137a5e; --accent-bg: #e8f5f0; --focus: #1d5fb8;
+    --attack: #c62828; --attack-bg: #fdeceb; --attack-line: #e7a5a2; --attack-ink: #8e1b1b;
+    --fault: #a86a00; --fault-bg: #fdf3e1; --fault-line: #e3c48a; --fault-ink: #6e4600;
+    --info: #1d5fb8; --info-bg: #e9f1fc; --info-line: #a9c6ee; --info-ink: #174a8f;
+    --clean: #2e7d32; --clean-bg: #e9f5ea; --clean-line: #a8d4ab; --clean-ink: #1f5d23;
+    --neutral-bg: #f1f3f6; --neutral-line: #cfd6df; --neutral-ink: #2b3440;
+    --sev-critical: #c2185b; --sev-meter: #2b3440; --sev-meter-off: #d5dbe3;
+    --chart-grid: #e3e7ed; --chart-axis: #b8c2ce; --chart-text: #444f5c;
+    font-size: 11.5px;
+  }
+  html, body { background: #fff !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; text-shadow: none !important; }
+  .app { display: block; }
+  .sidebar, .report-actions, .job-strip, .skip-link, .filters, .pager, dialog, .no-print, .button, .icon-button { display: none !important; }
+  .print-only { display: block !important; }
+  .report-bar { position: static; padding: 0 0 8px; border-bottom: 2px solid #10151c; backdrop-filter: none; background: #fff; }
+  .main-inner { padding: 12px 0 0; max-width: none; }
+  .panel, .stat, .callout, .subtle-box { break-inside: avoid; }
+  .panel { border-color: #d5dbe3; }
+  .table-wrap, .table-wrap.is-scroll { overflow: visible; max-height: none; }
+  .table th { position: static; }
+  .table tbody tr:hover td { background: none; }
+  h1, h2, h3, .section-title { break-after: avoid; }
+  a { color: inherit; text-decoration: none; }
+  .ref-button, .link-button, button.packet-ref { color: #10151c; }
+  /* Collapsed <details> cannot be force-opened from CSS in every browser; the Report
+     view renders everything expanded, so that is the view to print in full. */
+}

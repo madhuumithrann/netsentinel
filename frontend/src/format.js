@@ -1,5 +1,5 @@
-// Pure formatting and labelling helpers. No React, no DOM: these are imported by the
-// components and by the Node smoke test (scripts/smoke-test.mjs).
+// Pure formatting and labelling helpers. No React, no DOM, so they can also be imported
+// from Node scripts.
 
 export const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'];
 
@@ -83,7 +83,9 @@ export function humanize(value) {
     words[0] = acronyms.has(first) ? first : first.charAt(0).toUpperCase() + first.slice(1);
     return words.join(' ');
   }
-  return text;
+  // lower-case keys ("suspected_attacker_mac"): restore the protocol acronyms
+  return text.replace(/\b(mac|ip|dns|dhcp|tcp|udp|arp|mtu|ttl|icmp|rst|syn)s?\b/gi, (w) =>
+    w.endsWith('s') && w.length > 3 && !/^dns$/i.test(w) ? `${w.slice(0, -1).toUpperCase()}s` : w.toUpperCase());
 }
 
 export function plural(n, singular, pluralForm = `${singular}s`) {
@@ -172,18 +174,39 @@ export function categoryNote(category, assessment) {
   return { text: `Listed as a ${listed} type, but the evidence ${says}.`, agrees: false };
 }
 
-/** Render an arbitrary metric value as plain text (never markup). */
-export function formatMetric(value) {
+/** Severity as a 0-4 level, for the level meter. */
+export const SEVERITY_LEVEL = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+/** Detector run time: a sub-millisecond run reads "<1 ms", never a misleading "0 ms". */
+export function formatRunTime(seconds) {
+  if (!Number.isFinite(seconds)) return '–';
+  if (seconds < 0.0005) return '<1 ms';
+  return formatDuration(seconds);
+}
+
+/** True when a number is an epoch timestamp inside this capture (detectors report some times that way). */
+function isCaptureEpoch(value, ctx) {
+  const start = ctx?.captureStart;
+  if (!Number.isFinite(start) || start < 1e8) return false;
+  return value >= start - 1 && value <= start + (Number.isFinite(ctx.duration) ? ctx.duration : 0) + 1;
+}
+
+/**
+ * Render an arbitrary metric value as plain text (never markup). With a capture context
+ * ({captureStart, duration}), epoch timestamps become offsets into the capture.
+ */
+export function formatMetric(value, ctx) {
   if (value == null) return '–';
-  if (typeof value === 'number') return Number.isInteger(value) ? formatInt(value) : String(Number(value.toFixed(4)));
+  if (typeof value === 'number') {
+    if (isCaptureEpoch(value, ctx)) return `${formatOffset(value - ctx.captureStart)} into the capture`;
+    return Number.isInteger(value) ? formatInt(value) : String(Number(value.toFixed(4)));
+  }
   if (typeof value === 'boolean') return value ? 'yes' : 'no';
-  if (Array.isArray(value)) return value.map(formatMetric).join(', ');
+  if (Array.isArray(value)) return value.length ? value.map((v) => formatMetric(v, ctx)).join(', ') : 'none';
   if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return '[object]';
-    }
+    const entries = Object.entries(value);
+    if (!entries.length) return 'none';
+    return entries.map(([k, v]) => `${humanize(k)}: ${formatMetric(v, ctx)}`).join('; ');
   }
   return String(value);
 }
